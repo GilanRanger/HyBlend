@@ -3,26 +3,28 @@ import subprocess
 import time
 import pyautogui
 import pyperclip
+import yaml
+from pathlib import Path
 
-# Configuration
-ENTITY_ASSET_FOLDER = r"C:\Users\brend\Desktop\Hytale\templates\Hytale Model Examples"
-BLOCKBENCH_PATH = r"C:\Users\brend\AppData\Local\Programs\Blockbench\Blockbench.exe"
-BLENDER_PATH = r"C:\Program Files (x86)\Steam\steamapps\common\Blender\blender.exe"
-GLTF_EXPORT_FOLDER = r"C:\Users\brend\Desktop\Hytale\external_tools\HyBlend\assets\gltf"
-BLEND_OUTPUT_FOLDER = r"C:\Users\brend\Desktop\Hytale\external_tools\HyBlend\assets\rawBlend"
+config_path = Path(__file__).parent / "pipeline_configuration.yml"
+with open(config_path, 'r') as f:
+    config = yaml.safe_load(f)
 
-GLFT_EXPORT_SETTINGS = {
-    "binary_encoding": False,
-    "export_armature": True,
-    "embed_textures": True,
-    "export_animations": True,
-}
+ENTITY_ASSET_FOLDER = config['paths']['entity_asset_folder']
+BLOCKBENCH_PATH = config['paths']['blockbench']
+BLENDER_PATH = config['paths']['blender']
+GLTF_EXPORT_FOLDER = config['paths']['gltf_export_folder']
+BLEND_OUTPUT_FOLDER = config['paths']['blend_output_folder']
+
+GLTF_EXPORT_SETTINGS = config['gltf_export_settings']
 
 pyautogui.PAUSE = 0.1
 
 def find_blockymodel_files(folder):
     blockymodel_files = []
     for root, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if d.lower() != 'attachments']
+
         for file in files:
             if file.endswith('.blockymodel'):
                 blockymodel_files.append(os.path.join(root, file))
