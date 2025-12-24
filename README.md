@@ -22,5 +22,6 @@ Once Hytale's machinima system has been updated and is more feature-complete, th
 
 This will also include the exporting of:
 - All lighting
+- VFX (Requires a more complicated pipeline to export out of Hytale)
 - Sounds/Music
 - Modded Entities/Blocks/Items (though an automated process similar to how the vanilla assets are generated here)
