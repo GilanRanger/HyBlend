@@ -1,9 +1,9 @@
 import os
 import subprocess
 import time
-import pyautogui
-import pyperclip
 import yaml
+import requests
+import atexit
 from pathlib import Path
 
 config_path = Path(__file__).parent / "pipeline_configuration.yml"
@@ -11,20 +11,17 @@ with open(config_path, 'r') as f:
     config = yaml.safe_load(f)
 
 ENTITY_ASSET_FOLDER = config['paths']['entity_asset_folder']
-BLOCKBENCH_PATH = config['paths']['blockbench']
 BLENDER_PATH = config['paths']['blender']
 GLTF_EXPORT_FOLDER = config['paths']['gltf_export_folder']
 BLEND_OUTPUT_FOLDER = config['paths']['blend_output_folder']
+RIG_FORMAT_SCRIPT = config['paths']['rig_format_script']
+BLOCKBENCH_SERVER = 'http://localhost:3002'
 
-GLTF_EXPORT_SETTINGS = config['gltf_export_settings']
-
-pyautogui.PAUSE = 0.1
 
 def find_blockymodel_files(folder):
     blockymodel_files = []
     for root, dirs, files in os.walk(folder):
         dirs[:] = [d for d in dirs if d.lower() != 'attachments']
-
         for file in files:
             if file.endswith('.blockymodel'):
                 blockymodel_files.append(os.path.join(root, file))
@@ -32,15 +29,12 @@ def find_blockymodel_files(folder):
 
 
 def get_entity_name_from_path(blockymodel_path, used_names):
-    """Extract entity name from path structure: Entity_Folder/Models/model.blockymodel"""
     path_parts = os.path.normpath(blockymodel_path).split(os.sep)
 
-    # Find "Models" folder and get parent
     for i, part in enumerate(path_parts):
         if part.lower() == 'models' and i > 0:
             return path_parts[i - 1]
 
-    # Fallback: use filename with integer suffix
     base_name = os.path.splitext(os.path.basename(blockymodel_path))[0]
     counter = 0
     entity_name = f"{base_name}_{counter}"
@@ -53,92 +47,59 @@ def get_entity_name_from_path(blockymodel_path, used_names):
 
 
 def export_gltf_blockbench(blockymodel_path, output_gltf_path):
-    # File > Open
-    pyautogui.hotkey('ctrl', 'o')
-    time.sleep(1)
-
-    # Enter file path
-    pyperclip.copy(blockymodel_path)
-    pyautogui.hotkey('ctrl', 'v')
-    time.sleep(0.5)
-    pyautogui.press('enter')
-    time.sleep(2)
-
-    # Check for "Import Textures" dialog
-    # If dialog appears, "Select Folder" button should be focusable
-    model_folder = os.path.dirname(blockymodel_path)
-
-    # Try to handle texture dialog (won't affect anything if dialog isn't present)
-    pyautogui.press('tab')
-    pyautogui.press('tab')
-    time.sleep(0.3)
-    pyautogui.press('space')
-    time.sleep(0.5)
-
-    # If dialog was present, file picker is now open
-    # Enter the Model folder path
-    pyperclip.copy(model_folder)
-    pyautogui.hotkey('ctrl', 'v')
-    time.sleep(0.5)
-    pyautogui.press('tab')
-    pyautogui.press('enter')
-    time.sleep(1)
-
-    # Open export glTF Model menu (My hotkey is set as alt+F)
-    pyautogui.hotkey('alt', 'f')
-    time.sleep(0.5)
-
-    # Enable "Export Groups as Armature"
-    pyautogui.press('tab')
-    pyautogui.press('tab')
-    pyautogui.press('space')
-    time.sleep(0.3)
-
-    # Start export
-    pyautogui.press('enter')
-    time.sleep(1)
-
-    # Enter output path
-    pyperclip.copy(output_gltf_path)
-    pyautogui.hotkey('ctrl', 'v')
-    time.sleep(0.5)
-    pyautogui.press('enter')
-    time.sleep(1)
-
-    # Another Enter to overwrite existing files if necessary
-    pyautogui.press('tab')
-    pyautogui.press('enter')
-    time.sleep(1)
-
-    # Close project
-    pyautogui.hotkey('ctrl', 'w')
-    time.sleep(0.5)
-
-    return os.path.exists(output_gltf_path)
+    try:
+        response = requests.post(
+            f'{BLOCKBENCH_SERVER}/export',
+            json={'input': blockymodel_path, 'output': output_gltf_path},
+            timeout=30
+        )
+        return response.status_code == 200 and os.path.exists(output_gltf_path)
+    except Exception as e:
+        print(f"Export request failed: {e}")
+        return False
 
 
 def process_gltf_in_blender(gltf_path, blend_output_path):
-    rig_format_script = r"C:\Users\brend\Desktop\Hytale\external_tools\HyBlend\extraction\blender_rig_format.py"
-
     blender_script = f"""
 import bpy
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=r"{gltf_path}")
-
-exec(open(r"{rig_format_script}").read())
-
+exec(open(r"{RIG_FORMAT_SCRIPT}").read())
 bpy.ops.wm.save_as_mainfile(filepath=r"{blend_output_path}")
-print(r"Saved: {blend_output_path}")
 """
-
     temp_script = "temp_blender_import.py"
     with open(temp_script, 'w') as f:
         f.write(blender_script)
 
-    cmd = [BLENDER_PATH, "--background", "--python", temp_script]
-    subprocess.run(cmd, check=True)
+    subprocess.run([BLENDER_PATH, "--background", "--python", temp_script], check=True)
     os.remove(temp_script)
 
+
+def start_blockbench_server():
+    server_script = Path(__file__).parent / "blockbench_server.js"
+    process = subprocess.Popen(
+        ['node', str(server_script)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    for _ in range(60):
+        try:
+            if requests.get(f'{BLOCKBENCH_SERVER}/health', timeout=1).status_code == 200:
+                return process
+        except:
+            time.sleep(1)
+
+    raise Exception("Blockbench server failed to start")
+
+
+def shutdown_blockbench_server():
+    try:
+        requests.get(f'{BLOCKBENCH_SERVER}/shutdown', timeout=2)
+        time.sleep(1)
+    except:
+        pass
 
 def process():
     os.makedirs(GLTF_EXPORT_FOLDER, exist_ok=True)
@@ -148,9 +109,8 @@ def process():
     print(f"Found {len(blockymodel_files)} .blockymodel files")
 
     used_names = set()
-
-    subprocess.Popen([BLOCKBENCH_PATH])
-    time.sleep(8)
+    server_process = start_blockbench_server()
+    atexit.register(shutdown_blockbench_server)
 
     for blockymodel_path in blockymodel_files:
         entity_name = get_entity_name_from_path(blockymodel_path, used_names)
@@ -160,13 +120,14 @@ def process():
         blend_path = os.path.join(BLEND_OUTPUT_FOLDER, f"{entity_name}.blend")
 
         print(f"\nExporting: {entity_name}")
-        time.sleep(2)
 
         if export_gltf_blockbench(blockymodel_path, gltf_path):
             print(f"Successfully exported {entity_name}.gltf")
             process_gltf_in_blender(gltf_path, blend_path)
         else:
             print(f"Failed to export {entity_name}")
+
+    shutdown_blockbench_server()
 
 
 if __name__ == "__main__":

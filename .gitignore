@@ -1,2 +1,7 @@
 *.yaml
 *.yml
+
+extraction/blockbench
+extraction/node_modules
+extraction/package.json
+extraction/package-lock.json
