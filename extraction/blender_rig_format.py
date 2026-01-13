@@ -242,7 +242,7 @@ def get_bone_color(armature_obj, bone_name):
     if any(part in name_lower for part in HEAD_PARTS):
         return (0.0, 1.0, 0.0)  # GREEN
     
-    return (0.0, 0.0, 0.0)  # BLACK (default)
+    return (0.23, 0.25, 0.25)  # NEAR-BLACK
 
 def set_bone_widget_color(armature_obj, bone_name, widget):
     """
