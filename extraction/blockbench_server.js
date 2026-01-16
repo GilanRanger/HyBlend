@@ -28,13 +28,29 @@ async function getPage() {
     return (await browser.pages())[0];
 }
 
+function findTextureFile(modelPath) {
+    let currentDir = path.dirname(modelPath);
+    
+    while (currentDir) {
+        const pngFiles = fs.readdirSync(currentDir).filter(f => f.endsWith('.png'));
+        if (pngFiles.length > 0) {
+            return path.join(currentDir, pngFiles[0]);
+        }
+        
+        const parentDir = path.dirname(currentDir);
+        if (parentDir === currentDir) break;
+        currentDir = parentDir;
+    }
+    
+    return null;
+}
+
 async function exportModel(blockymodelPath, outputGltfPath) {
     const page = await getPage();
     const modelText = fs.readFileSync(blockymodelPath, 'utf8');
-    const modelFolder = path.dirname(blockymodelPath);
-    const pngFiles = fs.readdirSync(modelFolder).filter(f => f.endsWith('.png'));
+    const texturePath = findTextureFile(blockymodelPath);
 
-    const result = await page.evaluate(async (modelText, modelPath, pngFiles, modelFolder) => {
+    const result = await page.evaluate(async (modelText, modelPath, texturePath) => {
         Formats.hytale_character.new();
         
         const originalShowMessageBox = Blockbench.showMessageBox;
@@ -49,8 +65,7 @@ async function exportModel(blockymodelPath, outputGltfPath) {
         Codecs.blockymodel.parse(JSON.parse(modelText), modelPath);
         Blockbench.showMessageBox = originalShowMessageBox;
         
-        if (Project.textures.length === 0 && pngFiles.length > 0) {
-            let texturePath = modelFolder.replace(/\\/g, '/') + '/' + pngFiles[0];
+        if (Project.textures.length === 0 && texturePath) {
             await new Promise((resolve) => {
                 let texture = new Texture().fromPath(texturePath).add(false, true);
                 texture.load(() => {
@@ -78,7 +93,7 @@ async function exportModel(blockymodelPath, outputGltfPath) {
         
         Project.close();
         return gltfResult;
-    }, modelText, blockymodelPath, pngFiles, modelFolder);
+    }, modelText, blockymodelPath, texturePath);
 
     if (typeof result === 'string') {
         fs.writeFileSync(outputGltfPath, result);

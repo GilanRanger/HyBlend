@@ -21,29 +21,17 @@ BLOCKBENCH_SERVER = 'http://localhost:3002'
 def find_blockymodel_files(folder):
     blockymodel_files = []
     for root, dirs, files in os.walk(folder):
-        dirs[:] = [d for d in dirs if d.lower() != 'attachments']
         for file in files:
             if file.endswith('.blockymodel'):
                 blockymodel_files.append(os.path.join(root, file))
     return blockymodel_files
 
 
-def get_entity_name_from_path(blockymodel_path, used_names):
-    path_parts = os.path.normpath(blockymodel_path).split(os.sep)
-
-    for i, part in enumerate(path_parts):
-        if part.lower() == 'models' and i > 0:
-            return path_parts[i - 1]
-
-    base_name = os.path.splitext(os.path.basename(blockymodel_path))[0]
-    counter = 0
-    entity_name = f"{base_name}_{counter}"
-
-    while entity_name in used_names:
-        counter += 1
-        entity_name = f"{base_name}_{counter}"
-
-    return entity_name
+def get_entity_name_from_path(blockymodel_path, base_folder):
+    rel_path = os.path.relpath(blockymodel_path, base_folder)
+    name_without_ext = os.path.splitext(rel_path)[0]
+    safe_name = name_without_ext.replace(os.sep, '_').replace('/', '_').replace('\\', '_')
+    return safe_name
 
 
 def export_gltf_blockbench(blockymodel_path, output_gltf_path):
@@ -108,13 +96,11 @@ def process():
     blockymodel_files = find_blockymodel_files(ENTITY_ASSET_FOLDER)
     print(f"Found {len(blockymodel_files)} .blockymodel files")
 
-    used_names = set()
     server_process = start_blockbench_server()
     atexit.register(shutdown_blockbench_server)
 
     for blockymodel_path in blockymodel_files:
-        entity_name = get_entity_name_from_path(blockymodel_path, used_names)
-        used_names.add(entity_name)
+        entity_name = get_entity_name_from_path(blockymodel_path, ENTITY_ASSET_FOLDER)
 
         gltf_path = os.path.join(GLTF_EXPORT_FOLDER, f"{entity_name}.gltf")
         blend_path = os.path.join(BLEND_OUTPUT_FOLDER, f"{entity_name}.blend")
